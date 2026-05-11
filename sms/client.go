@@ -13,6 +13,8 @@ type Client interface {
 	MassTextingTemplate(ctx context.Context, phones []string, templateID string, messages map[string]string) (*Response, error)
 }
 
+type SmsBlend = Client
+
 type Callback func(*Response, error)
 
 type PhoneVerifier interface {

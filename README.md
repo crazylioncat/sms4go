@@ -16,7 +16,7 @@ github.com/CrazyLionCat/sms4go
 go get github.com/CrazyLionCat/sms4go
 ```
 
-本仓库当前不依赖第三方 Go 包，核心功能基于 Go 标准库实现。
+核心发送逻辑基于 Go 标准库实现。`starter` 工具包为了支持 yml 配置读取，使用 `gopkg.in/yaml.v3` 解析配置文件。
 
 ## 快速开始
 
@@ -77,6 +77,78 @@ client, err := aliyun.New(sms.BaseConfig{
 })
 ```
 
+## YML Starter 工具
+
+如果希望接近 `sms4j-spring-boot-starter` 的使用方式，可以使用 `starter` 包从 yml 读取配置、创建并注册客户端。这个工具不依赖 Spring Boot，只负责配置装载和客户端注册。
+
+`sms.yml` 示例：
+
+```yaml
+sms:
+  blends:
+    aliyun-main:
+      supplier: alibaba
+      access-key-id: your-access-key-id
+      access-key-secret: your-access-key-secret
+      signature: 短信签名
+      template-id: SMS_123456
+      template-name: code
+      timeout: 10000
+      retry-interval: 5
+      weight: 1
+    tencent-main:
+      supplier: tencent
+      access-key-id: your-secret-id
+      access-key-secret: your-secret-key
+      sdk-app-id: your-sdk-app-id
+      signature: 短信签名
+      template-id: "123456"
+      weight: 1
+```
+
+配置兼容 sms4j starter 常用的 kebab-case 写法，例如 `access-key-id`、`template-id`、`sdk-app-id`。配置 key 会作为默认 `configId`；如果没有显式写 `supplier`，也会使用配置 key 作为供应商标识。`timeout` 按毫秒解析，`retry-interval` 按秒解析；也支持 `10s`、`500ms` 这类 Go duration 字符串。
+
+使用方式：
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/CrazyLionCat/sms4go/sms"
+	"github.com/CrazyLionCat/sms4go/starter"
+
+	_ "github.com/CrazyLionCat/sms4go/provider/aliyun"
+	_ "github.com/CrazyLionCat/sms4go/provider/tencent"
+)
+
+func main() {
+	factory, err := starter.NewFactoryFromYAML("sms.yml")
+	if err != nil {
+		panic(err)
+	}
+
+	var blend sms.SmsBlend
+	blend, err = starter.GetSmsBlend(factory, "aliyun-main")
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := blend.SendMessage(context.Background(), "18888888888", "123456")
+	fmt.Printf("resp=%+v err=%v\n", resp, err)
+}
+```
+
+也可以直接通过 `Factory` 发送；`configID` 传空字符串时会使用平滑加权负载均衡选择客户端：
+
+```go
+resp, err := factory.SendMessage(context.Background(), "", "18888888888", "123456")
+```
+
+说明：Go 没有 Java/Spring 的自动类路径扫描，使用 yml 注册 provider 前，仍然需要对要启用的 provider 做空导入。
+
 ## JSON 配置加载
 
 配置文件示例：
@@ -134,7 +206,7 @@ func main() {
 }
 ```
 
-说明：当前内置配置加载只支持 JSON。`LoadYAML` 保留了函数入口，但会返回 unsupported 错误。
+说明：`config.LoadYAML` 和 `starter.NewFactoryFromYAML` 已支持 yml；如果你需要自己管理 `core.Factory`，可以用 `config.LoadYAML` 加 `config.RegisterBlends`。
 
 ## 短信发送
 
@@ -453,5 +525,4 @@ $env:GOCACHE='D:\git-sources\sms4j\sms4go\.gocache'; go test ./...
 - 短信 provider 应继续补充与 Java sms4j 行为一致的迁移测试，例如签名字符串、请求体、Header、URL 和成功响应判断。
 - `jdcloud` 仍需要接入京东云 Go SDK 或补齐 OpenAPI 签名。
 - 邮件 IMAP 监听尚未实现。
-- 目前配置加载只内置 JSON，不内置 YAML。
 - 需要继续增加签名算法单元测试和 HTTP mock 测试，确保 Go 版输出与 Java 版逻辑一致。

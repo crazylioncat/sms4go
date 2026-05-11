@@ -9,6 +9,9 @@ func RegisterBlends(factory *core.Factory, cfg *FileConfig) error {
 	if factory == nil {
 		factory = core.DefaultFactory
 	}
+	if cfg == nil {
+		return nil
+	}
 	for _, blend := range cfg.SMS.Blends {
 		client, err := provider.Create(blend)
 		if err != nil {
