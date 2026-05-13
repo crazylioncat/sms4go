@@ -7,6 +7,11 @@ type Response struct {
 	ConfigID string `json:"configId,omitempty" yaml:"configId,omitempty"`
 }
 
+type Result struct {
+	Response *Response
+	Err      error
+}
+
 func Success(data any, configID string) *Response {
 	return &Response{Success: true, Data: data, ConfigID: configID}
 }

@@ -125,7 +125,7 @@ import (
 )
 
 func main() {
-	factory, err := starter.NewFactoryFromYAML("sms.yml")
+	factory, err := starter.New(starter.WithYAML("sms.yml"))
 	if err != nil {
 		panic(err)
 	}
@@ -139,6 +139,16 @@ func main() {
 	resp, err := blend.SendMessage(context.Background(), "18888888888", "123456")
 	fmt.Printf("resp=%+v err=%v\n", resp, err)
 }
+```
+
+如果你希望直接注册到默认工厂，可以用 `starter.Init`，后续通过 `starter.Get` 取 `SmsBlend`：
+
+```go
+if err := starter.Init(starter.WithYAML("sms.yml")); err != nil {
+	panic(err)
+}
+
+blend, err := starter.Get("aliyun-main")
 ```
 
 也可以直接通过 `Factory` 发送；`configID` 传空字符串时会使用平滑加权负载均衡选择客户端：
@@ -206,7 +216,7 @@ func main() {
 }
 ```
 
-说明：`config.LoadYAML` 和 `starter.NewFactoryFromYAML` 已支持 yml；如果你需要自己管理 `core.Factory`，可以用 `config.LoadYAML` 加 `config.RegisterBlends`。
+说明：`config.LoadYAML` 和 `starter.New(starter.WithYAML(...))` 已支持 yml；如果你需要自己管理 `core.Factory`，可以用 `config.LoadYAML` 加 `config.RegisterBlends`。旧的 `starter.NewFactoryFromYAML` 仍保留用于兼容。
 
 ## 短信发送
 
@@ -252,20 +262,31 @@ resp, err := factory.SendMessage(ctx, "", "18888888888", "123456")
 
 ## 异步和延迟发送
 
-异步发送：
+推荐使用 channel 接收异步结果：
 
 ```go
-factory.SendMessageAsync(ctx, "aliyun-main", "18888888888", "123456", func(resp *sms.Response, err error) {
-	// 处理发送结果
-})
+result := <-factory.SendMessageChan(ctx, "aliyun-main", "18888888888", "123456")
+resp, err := result.Response, result.Err
+```
+
+也保留 callback 写法：
+
+```go
+factory.SendMessageAsync(ctx, "aliyun-main", "18888888888", "123456", func(resp *sms.Response, err error) {})
 ```
 
 延迟发送：
 
 ```go
+result := <-factory.DelayMessage(ctx, "aliyun-main", "18888888888", "123456", 10*time.Second)
+resp, err := result.Response, result.Err
+```
+
+如需取消延迟任务，可以继续使用兼容的 timer 写法：
+
+```go
 timer := factory.DelayedMessage(ctx, "aliyun-main", "18888888888", "123456", 10*time.Second, nil)
 
-// 如需取消：
 timer.Stop()
 ```
 
@@ -277,10 +298,10 @@ blacklist := core.NewBlacklist(dao, 24*time.Hour)
 
 factory := core.NewFactory(core.WithBlacklist(blacklist))
 
-factory.JoinInBlacklist("18888888888")
-factory.RemoveFromBlacklist("18888888888")
-factory.BatchJoinBlacklist([]string{"18888888888", "16666666666"})
-factory.BatchRemovalFromBlacklist([]string{"18888888888", "16666666666"})
+factory.Block("18888888888")
+factory.Unblock("18888888888")
+factory.BlockAll([]string{"18888888888", "16666666666"})
+factory.UnblockAll([]string{"18888888888", "16666666666"})
 ```
 
 黑名单会通过 middleware 在发送前拦截。

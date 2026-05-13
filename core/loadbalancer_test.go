@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/CrazyLionCat/sms4go/provider/mock"
 	"github.com/CrazyLionCat/sms4go/sms"
@@ -39,6 +40,44 @@ func TestFactorySendMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !resp.Success || resp.ConfigID != "mock-1" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+}
+
+func TestFactorySendMessageChan(t *testing.T) {
+	factory := NewFactory()
+	client := mock.New(sms.BaseConfig{ConfigID: "mock-chan", Supplier: mock.Supplier})
+	if err := factory.Register(client, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	result := <-factory.SendMessageChan(context.Background(), "mock-chan", "18888888888", "123456")
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if result.Response == nil || !result.Response.Success || result.Response.ConfigID != "mock-chan" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestFactoryBlockAliases(t *testing.T) {
+	factory := NewFactory(WithBlacklist(NewBlacklist(sms.NewMemoryDao(time.Hour), time.Hour)))
+	client := mock.New(sms.BaseConfig{ConfigID: "mock-block", Supplier: mock.Supplier})
+	if err := factory.Register(client, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	factory.Block("18888888888")
+	if _, err := factory.SendMessage(context.Background(), "mock-block", "18888888888", "123456"); err != sms.ErrBlacklisted {
+		t.Fatalf("expected blacklisted error, got %v", err)
+	}
+
+	factory.Unblock("18888888888")
+	resp, err := factory.SendMessage(context.Background(), "mock-block", "18888888888", "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Success {
 		t.Fatalf("unexpected response: %#v", resp)
 	}
 }

@@ -10,6 +10,88 @@ type Config = config.FileConfig
 type SMSConfig = config.SMSConfig
 type SmsBlend = sms.SmsBlend
 
+type Option func(*bootstrap) error
+
+type bootstrap struct {
+	factory        *core.Factory
+	factoryOptions []core.Option
+	configs        []*Config
+}
+
+func New(options ...Option) (*core.Factory, error) {
+	var boot bootstrap
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+		if err := option(&boot); err != nil {
+			return nil, err
+		}
+	}
+	factory := boot.factory
+	if factory == nil {
+		factory = core.NewFactory(boot.factoryOptions...)
+	}
+	for _, cfg := range boot.configs {
+		if err := Register(factory, cfg); err != nil {
+			return nil, err
+		}
+	}
+	return factory, nil
+}
+
+func Init(options ...Option) error {
+	_, err := New(append([]Option{WithFactory(core.DefaultFactory)}, options...)...)
+	return err
+}
+
+func WithFactory(factory *core.Factory) Option {
+	return func(boot *bootstrap) error {
+		if factory != nil {
+			boot.factory = factory
+		}
+		return nil
+	}
+}
+
+func WithFactoryOptions(options ...core.Option) Option {
+	return func(boot *bootstrap) error {
+		boot.factoryOptions = append(boot.factoryOptions, options...)
+		return nil
+	}
+}
+
+func WithConfig(cfg *Config) Option {
+	return func(boot *bootstrap) error {
+		if cfg != nil {
+			boot.configs = append(boot.configs, cfg)
+		}
+		return nil
+	}
+}
+
+func WithYAML(path string) Option {
+	return func(boot *bootstrap) error {
+		cfg, err := LoadYAML(path)
+		if err != nil {
+			return err
+		}
+		boot.configs = append(boot.configs, cfg)
+		return nil
+	}
+}
+
+func WithJSON(path string) Option {
+	return func(boot *bootstrap) error {
+		cfg, err := LoadJSON(path)
+		if err != nil {
+			return err
+		}
+		boot.configs = append(boot.configs, cfg)
+		return nil
+	}
+}
+
 func LoadYAML(path string) (*Config, error) {
 	return config.LoadYAML(path)
 }
@@ -39,19 +121,15 @@ func RegisterJSON(factory *core.Factory, path string) error {
 }
 
 func NewFactoryFromYAML(path string, options ...core.Option) (*core.Factory, error) {
-	factory := core.NewFactory(options...)
-	if err := RegisterYAML(factory, path); err != nil {
-		return nil, err
-	}
-	return factory, nil
+	return New(WithFactoryOptions(options...), WithYAML(path))
 }
 
 func NewFactoryFromJSON(path string, options ...core.Option) (*core.Factory, error) {
-	factory := core.NewFactory(options...)
-	if err := RegisterJSON(factory, path); err != nil {
-		return nil, err
-	}
-	return factory, nil
+	return New(WithFactoryOptions(options...), WithJSON(path))
+}
+
+func Get(configID string) (SmsBlend, error) {
+	return core.SmsBlend(configID)
 }
 
 func GetSmsBlend(factory *core.Factory, configID string) (SmsBlend, error) {

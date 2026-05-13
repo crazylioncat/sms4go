@@ -141,28 +141,44 @@ func (f *Factory) Use(middleware ...Middleware) {
 	f.mu.Unlock()
 }
 
-func (f *Factory) JoinInBlacklist(phone string) {
+func (f *Factory) Block(phone string) {
 	if f.blacklist != nil {
 		f.blacklist.Join(phone)
 	}
 }
 
-func (f *Factory) RemoveFromBlacklist(phone string) {
+func (f *Factory) Unblock(phone string) {
 	if f.blacklist != nil {
 		f.blacklist.Remove(phone)
 	}
 }
 
-func (f *Factory) BatchJoinBlacklist(phones []string) {
+func (f *Factory) BlockAll(phones []string) {
 	if f.blacklist != nil {
 		f.blacklist.BatchJoin(phones)
 	}
 }
 
-func (f *Factory) BatchRemovalFromBlacklist(phones []string) {
+func (f *Factory) UnblockAll(phones []string) {
 	if f.blacklist != nil {
 		f.blacklist.BatchRemove(phones)
 	}
+}
+
+func (f *Factory) JoinInBlacklist(phone string) {
+	f.Block(phone)
+}
+
+func (f *Factory) RemoveFromBlacklist(phone string) {
+	f.Unblock(phone)
+}
+
+func (f *Factory) BatchJoinBlacklist(phones []string) {
+	f.BlockAll(phones)
+}
+
+func (f *Factory) BatchRemovalFromBlacklist(phones []string) {
+	f.UnblockAll(phones)
 }
 
 func (f *Factory) SendMessage(ctx context.Context, configID string, phone string, message string) (*sms.Response, error) {
@@ -214,6 +230,12 @@ func (f *Factory) SendMessageAsync(ctx context.Context, configID string, phone s
 	}()
 }
 
+func (f *Factory) SendMessageChan(ctx context.Context, configID string, phone string, message string) <-chan sms.Result {
+	return f.run(func() (*sms.Response, error) {
+		return f.SendMessage(ctx, configID, phone, message)
+	})
+}
+
 func (f *Factory) SendTemplateAsync(ctx context.Context, configID string, phone string, templateID string, messages map[string]string, callback sms.Callback) {
 	go func() {
 		resp, err := f.SendTemplate(ctx, configID, phone, templateID, messages)
@@ -221,6 +243,12 @@ func (f *Factory) SendTemplateAsync(ctx context.Context, configID string, phone 
 			callback(resp, err)
 		}
 	}()
+}
+
+func (f *Factory) SendTemplateChan(ctx context.Context, configID string, phone string, templateID string, messages map[string]string) <-chan sms.Result {
+	return f.run(func() (*sms.Response, error) {
+		return f.SendTemplate(ctx, configID, phone, templateID, messages)
+	})
 }
 
 func (f *Factory) DelayedMessage(ctx context.Context, configID string, phone string, message string, delay time.Duration, callback sms.Callback) *time.Timer {
@@ -232,6 +260,16 @@ func (f *Factory) DelayedMessage(ctx context.Context, configID string, phone str
 	})
 }
 
+func (f *Factory) DelayMessage(ctx context.Context, configID string, phone string, message string, delay time.Duration) <-chan sms.Result {
+	ch := make(chan sms.Result, 1)
+	time.AfterFunc(delay, func() {
+		resp, err := f.SendMessage(ctx, configID, phone, message)
+		ch <- sms.Result{Response: resp, Err: err}
+		close(ch)
+	})
+	return ch
+}
+
 func (f *Factory) DelayedTemplate(ctx context.Context, configID string, phone string, templateID string, messages map[string]string, delay time.Duration, callback sms.Callback) *time.Timer {
 	return time.AfterFunc(delay, func() {
 		resp, err := f.SendTemplate(ctx, configID, phone, templateID, messages)
@@ -239,6 +277,26 @@ func (f *Factory) DelayedTemplate(ctx context.Context, configID string, phone st
 			callback(resp, err)
 		}
 	})
+}
+
+func (f *Factory) DelayTemplate(ctx context.Context, configID string, phone string, templateID string, messages map[string]string, delay time.Duration) <-chan sms.Result {
+	ch := make(chan sms.Result, 1)
+	time.AfterFunc(delay, func() {
+		resp, err := f.SendTemplate(ctx, configID, phone, templateID, messages)
+		ch <- sms.Result{Response: resp, Err: err}
+		close(ch)
+	})
+	return ch
+}
+
+func (f *Factory) run(send func() (*sms.Response, error)) <-chan sms.Result {
+	ch := make(chan sms.Result, 1)
+	go func() {
+		resp, err := send()
+		ch <- sms.Result{Response: resp, Err: err}
+		close(ch)
+	}()
+	return ch
 }
 
 func (f *Factory) clientFor(configID string) (sms.Client, error) {

@@ -21,11 +21,21 @@ type SMSConfig struct {
 	Blends map[string]sms.BaseConfig `json:"blends" yaml:"blends"`
 }
 
-func LoadJSON(path string) (*FileConfig, error) {
+type Decoder func([]byte) (*FileConfig, error)
+
+func Load(path string, decode Decoder) (*FileConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	return decode(data)
+}
+
+func LoadJSON(path string) (*FileConfig, error) {
+	return Load(path, DecodeJSON)
+}
+
+func DecodeJSON(data []byte) (*FileConfig, error) {
 	var cfg FileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
@@ -35,10 +45,10 @@ func LoadJSON(path string) (*FileConfig, error) {
 }
 
 func LoadYAML(path string) (*FileConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+	return Load(path, DecodeYAML)
+}
+
+func DecodeYAML(data []byte) (*FileConfig, error) {
 	var raw struct {
 		SMS struct {
 			Blends map[string]map[string]any `yaml:"blends"`
